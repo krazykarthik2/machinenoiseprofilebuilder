@@ -113,7 +113,7 @@ def predict_machine(y, sr):
     
     best_machine = None
     highest_inlier_ratio = 0.0
-    best_preds = np.full(len(X_test), -1)
+    best_scores = np.full(len(X_test), -1.0)
     
     results = {}
     
@@ -128,6 +128,7 @@ def predict_machine(y, sr):
             
             X_scaled = scaler.transform(X_test)
             preds = clf.predict(X_scaled)
+            scores = clf.decision_function(X_scaled)
             
             # preds is 1 for inlier, -1 for outlier
             inliers = np.sum(preds == 1)
@@ -137,9 +138,9 @@ def predict_machine(y, sr):
             if ratio > highest_inlier_ratio and ratio > 0.5: # At least 50% of chunks must match the machine profile
                 highest_inlier_ratio = ratio
                 best_machine = machine
-                best_preds = preds
+                best_scores = scores
                 
     if best_machine is None:
-        return "Unknown / Background Noise", results, best_preds
+        return "Unknown / Background Noise", results, best_scores
         
-    return best_machine, results, best_preds
+    return best_machine, results, best_scores

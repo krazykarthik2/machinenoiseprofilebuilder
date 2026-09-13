@@ -188,16 +188,34 @@ if audio_source is not None:
             st.write("Match Ratios (Inlier Percentage):")
             st.json(match_scores)
             
-            st.subheader("Chunk-by-Chunk Analysis")
-            st.write("Green chunks match the machine profile. Red chunks are outliers (transient noise or background).")
+            st.subheader("Chunk-by-Chunk Analysis (Confidence Gradient)")
+            st.write("Flowing gradient based on model confidence. Deep green = strong match, Deep red = strong outlier.")
             fig, ax = plt.subplots(figsize=(12, 3))
-            librosa.display.waveshow(y, sr=sr, ax=ax, alpha=0.5)
             
-            # Highlight chunks
-            # each chunk is 1.0 seconds long (based on extract_features_chunked default)
-            for i, p in enumerate(chunk_preds):
-                color = 'green' if p == 1 else 'red'
-                ax.axvspan(i, i + 1, color=color, alpha=0.3)
+            if len(chunk_preds) > 0:
+                import matplotlib.colors as mcolors
+                import matplotlib.cm as cm
+                
+                # Setup colormap normalization based on the decision function scores
+                # 0 is the boundary (yellow), >0 is inlier (green), <0 is outlier (red)
+                vmin = min(-1.0, np.min(chunk_preds))
+                vmax = max(1.0, np.max(chunk_preds))
+                norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+                
+                # Stretch the scores to fit behind the waveform using a bicubic gradient
+                gradient = np.array(chunk_preds).reshape(1, -1)
+                
+                # librosa waveshow limits
+                times = librosa.times_like(y, sr=sr)
+                max_time = times[-1] if len(times) > 0 else len(chunk_preds)
+                
+                # Plot the flowing gradient background
+                ax.imshow(gradient, aspect='auto', cmap='RdYlGn', norm=norm,
+                          extent=[0, max_time, -1, 1],
+                          alpha=0.4, interpolation='bicubic')
+            
+            librosa.display.waveshow(y, sr=sr, ax=ax, alpha=0.8, color='black')
+            ax.set_ylim([-1, 1])
                 
             st.pyplot(fig)
             st.audio(audio_path)
