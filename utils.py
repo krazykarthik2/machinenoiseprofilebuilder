@@ -1,16 +1,13 @@
 import os
-import json
 import numpy as np
 import librosa
 import joblib
 from moviepy import VideoFileClip
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import OneClassSVM
 from sklearn.preprocessing import StandardScaler
 
 DATA_DIR = "data"
-MODELS_DIR = "models"
 os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(MODELS_DIR, exist_ok=True)
 
 def extract_audio_from_video(video_path, output_audio_path):
     clip = VideoFileClip(video_path)
@@ -21,37 +18,30 @@ def load_audio(file_path):
     y, sr = librosa.load(file_path, sr=None)
     return y, sr
 
-def extract_features(y, sr):
+def extract_features_single(y, sr):
     features = []
     
-    # Noise profile characteristics
-    # Spectral Centroid
     cent = librosa.feature.spectral_centroid(y=y, sr=sr)
     features.append(np.mean(cent))
     features.append(np.std(cent))
     
-    # Spectral Bandwidth
     bw = librosa.feature.spectral_bandwidth(y=y, sr=sr)
     features.append(np.mean(bw))
     features.append(np.std(bw))
     
-    # Spectral Rolloff
     rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)
     features.append(np.mean(rolloff))
     features.append(np.std(rolloff))
     
-    # Zero Crossing Rate
     zcr = librosa.feature.zero_crossing_rate(y)
     features.append(np.mean(zcr))
     features.append(np.std(zcr))
     
-    # MFCCs
     mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
     for e in mfccs:
         features.append(np.mean(e))
         features.append(np.std(e))
         
-    # Rhythmic/Beat features (Tempogram for machine repetition)
     onset_env = librosa.onset.onset_strength(y=y, sr=sr)
     tempogram = librosa.feature.tempogram(onset_envelope=onset_env, sr=sr)
     features.append(np.mean(tempogram))
@@ -59,66 +49,81 @@ def extract_features(y, sr):
     
     return np.array(features)
 
-def save_features(machine_name, features):
+def extract_features_chunked(y, sr, chunk_duration=1.0):
+    chunk_samples = int(chunk_duration * sr)
+    features_list = []
+    for i in range(0, len(y), chunk_samples):
+        chunk = y[i:i+chunk_samples]
+        if len(chunk) < chunk_samples / 2:
+            continue
+        feats = extract_features_single(chunk, sr)
+        features_list.append(feats)
+    if len(features_list) == 0:
+        return np.array([extract_features_single(y, sr)])
+    return np.array(features_list)
+
+def save_features(machine_name, features_2d):
     machine_dir = os.path.join(DATA_DIR, machine_name)
     os.makedirs(machine_dir, exist_ok=True)
     
-    # Remove any existing .npy files to ensure there's only one profile
-    for f in os.listdir(machine_dir):
-        if f.endswith('.npy'):
-            os.remove(os.path.join(machine_dir, f))
-            
     feature_path = os.path.join(machine_dir, "profile.npy")
-    np.save(feature_path, features)
+    np.save(feature_path, features_2d)
     return feature_path
 
-def train_model():
-    X = []
-    y_labels = []
+def train_machine_model(machine_name):
+    machine_dir = os.path.join(DATA_DIR, machine_name)
+    feature_path = os.path.join(machine_dir, "profile.npy")
     
-    machines = [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))]
-    if len(machines) < 2:
-        return False, "Need at least two machines to train."
+    if not os.path.exists(feature_path):
+        return False, f"No profile found for {machine_name}."
         
-    for machine in machines:
-        machine_dir = os.path.join(DATA_DIR, machine)
-        for f in os.listdir(machine_dir):
-            if f.endswith('.npy'):
-                feats = np.load(os.path.join(machine_dir, f))
-                X.append(feats)
-                y_labels.append(machine)
-                
-    if len(X) < 2:
-        return False, "Not enough data points."
+    X = np.load(feature_path)
+    if len(X) == 0:
+        return False, "Profile is empty."
         
-    X = np.array(X)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
-    clf = RandomForestClassifier(n_estimators=100, random_state=42)
-    clf.fit(X_scaled, y_labels)
+    # Unsupervised learning: One-Class SVM learns the boundaries of this specific machine's noise
+    clf = OneClassSVM(nu=0.1, kernel="rbf", gamma='scale')
+    clf.fit(X_scaled)
     
-    joblib.dump(scaler, os.path.join(MODELS_DIR, "scaler.pkl"))
-    joblib.dump(clf, os.path.join(MODELS_DIR, "model.pkl"))
-    joblib.dump(list(set(y_labels)), os.path.join(MODELS_DIR, "classes.pkl"))
+    joblib.dump(scaler, os.path.join(machine_dir, "scaler.pkl"))
+    joblib.dump(clf, os.path.join(machine_dir, "model.pkl"))
     
-    return True, "Model trained successfully."
+    return True, f"Unsupervised model trained successfully for {machine_name}."
 
-def predict_machine(features):
-    scaler_path = os.path.join(MODELS_DIR, "scaler.pkl")
-    model_path = os.path.join(MODELS_DIR, "model.pkl")
+def predict_machine(y, sr):
+    X_test = extract_features_chunked(y, sr)
+    machines = [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))]
     
-    if not os.path.exists(scaler_path) or not os.path.exists(model_path):
-        return None, "Model not trained yet."
+    best_machine = None
+    highest_inlier_ratio = 0.0
+    
+    results = {}
+    
+    for machine in machines:
+        machine_dir = os.path.join(DATA_DIR, machine)
+        scaler_path = os.path.join(machine_dir, "scaler.pkl")
+        model_path = os.path.join(machine_dir, "model.pkl")
         
-    scaler = joblib.load(scaler_path)
-    clf = joblib.load(model_path)
-    
-    features_scaled = scaler.transform([features])
-    prediction = clf.predict(features_scaled)[0]
-    probabilities = clf.predict_proba(features_scaled)[0]
-    
-    classes = clf.classes_
-    prob_dict = {c: p for c, p in zip(classes, probabilities)}
-    
-    return prediction, prob_dict
+        if os.path.exists(scaler_path) and os.path.exists(model_path):
+            scaler = joblib.load(scaler_path)
+            clf = joblib.load(model_path)
+            
+            X_scaled = scaler.transform(X_test)
+            preds = clf.predict(X_scaled)
+            
+            # preds is 1 for inlier, -1 for outlier
+            inliers = np.sum(preds == 1)
+            ratio = inliers / len(preds)
+            results[machine] = ratio
+            
+            if ratio > highest_inlier_ratio and ratio > 0.5: # At least 50% of chunks must match the machine profile
+                highest_inlier_ratio = ratio
+                best_machine = machine
+                
+    if best_machine is None:
+        return "Unknown / Background Noise", results
+        
+    return best_machine, results

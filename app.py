@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import tempfile
 import zipfile
-import uuid
 import matplotlib.pyplot as plt
 import librosa
 import librosa.display
@@ -11,23 +10,23 @@ import numpy as np
 from utils import (
     extract_audio_from_video,
     load_audio,
-    extract_features,
+    extract_features_chunked,
     save_features,
-    train_model,
+    train_machine_model,
     predict_machine,
     DATA_DIR
 )
 
-st.set_page_config(page_title="Audio Noise Profile Builder", layout="wide")
+st.set_page_config(page_title="Audio Noise Profile Builder (Unsupervised)", layout="wide")
 
 st.title("Audio Noise Profile Builder")
-st.write("Build simple noise profiles for machine sounds and train a lightweight model to recognize them.")
+st.write("Build an unsupervised profile for a specific machine to distinguish it from normal day-to-day noise.")
 
 # Sidebar for Machine Management
 st.sidebar.header("Machine Profiles")
 existing_machines = [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))]
 
-new_machine = st.sidebar.text_input("Create new machine:")
+new_machine = st.sidebar.text_input("Create new machine profile:")
 if st.sidebar.button("Add Machine"):
     if new_machine and new_machine not in existing_machines:
         os.makedirs(os.path.join(DATA_DIR, new_machine), exist_ok=True)
@@ -40,7 +39,8 @@ if not existing_machines and not new_machine:
     
 active_machine = st.sidebar.selectbox("Select Active Machine for Data Collection", [""] + existing_machines)
 
-st.header("1. Upload and Process Data")
+st.header("1. Upload Data to Build Profile")
+st.write(f"Upload audio/video files for the machine **{active_machine if active_machine else '[Select a machine]'}**.")
 uploaded_files = st.file_uploader(
     "Upload Audio/Video files or a ZIP file", 
     type=['wav', 'mp3', 'mp4', 'mov', 'avi', 'mpeg', 'zip'],
@@ -55,18 +55,17 @@ def process_file(file_path, file_ext):
         audio_path = file_path
         
     y, sr = load_audio(audio_path)
-    features = extract_features(y, sr)
-    return features, y, sr, audio_path
+    features_2d = extract_features_chunked(y, sr)
+    return features_2d, y, sr, audio_path
 
 if uploaded_files:
-    all_features = []
+    all_features_chunks = []
     first_y, first_sr, first_audio_path = None, None, None
     
-    with st.spinner("Processing files..."):
+    with st.spinner("Chunking audio and extracting features..."):
         for uploaded_file in uploaded_files:
             file_ext = uploaded_file.name.split('.')[-1].lower()
             
-            # Save uploaded file temporarily
             tfile = tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") 
             tfile.write(uploaded_file.read())
             tfile.close()
@@ -84,7 +83,7 @@ if uploaded_files:
                             extracted_file_path = os.path.join(root, file)
                             try:
                                 feats, y, sr, a_path = process_file(extracted_file_path, ext)
-                                all_features.append(feats)
+                                all_features_chunks.append(feats)
                                 if first_y is None:
                                     first_y, first_sr, first_audio_path = y, sr, a_path
                             except Exception as e:
@@ -92,62 +91,68 @@ if uploaded_files:
             else:
                 try:
                     feats, y, sr, a_path = process_file(tfile.name, file_ext)
-                    all_features.append(feats)
+                    all_features_chunks.append(feats)
                     if first_y is None:
                         first_y, first_sr, first_audio_path = y, sr, a_path
                 except Exception as e:
                     st.warning(f"Could not process {uploaded_file.name}: {e}")
                     
-    st.success(f"Successfully extracted features from {len(all_features)} files.")
+    if all_features_chunks:
+        # Stack all chunks vertically into one large 2D dataset representing the machine's full distribution
+        aggregated_dataset = np.vstack(all_features_chunks)
+        st.success(f"Extracted {len(aggregated_dataset)} chunks of features from the uploaded files.")
 
-    if first_y is not None:
-        st.subheader("Sample Noise Profile Visualization")
-        st.write("Displaying visualization for the first processed file.")
-        st.audio(first_audio_path)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("Waveform")
-            fig, ax = plt.subplots(figsize=(10, 3))
-            librosa.display.waveshow(first_y, sr=first_sr, ax=ax)
-            st.pyplot(fig)
+        if first_y is not None:
+            st.subheader("Sample Noise Profile Visualization")
+            st.write("Displaying visualization for the first processed file.")
+            st.audio(first_audio_path)
             
-        with col2:
-            st.write("Mel-Spectrogram (Frequency Domain)")
-            S = librosa.feature.melspectrogram(y=first_y, sr=first_sr, n_mels=128)
-            S_dB = librosa.power_to_db(S, ref=np.max)
-            fig, ax = plt.subplots(figsize=(10, 3))
-            img = librosa.display.specshow(S_dB, x_axis='time', y_axis='mel', sr=first_sr, ax=ax)
-            fig.colorbar(img, ax=ax, format='%+2.0f dB')
-            st.pyplot(fig)
-            
-        st.write("Rhythmic Analysis (Tempogram)")
-        onset_env = librosa.onset.onset_strength(y=first_y, sr=first_sr)
-        tempogram = librosa.feature.tempogram(onset_envelope=onset_env, sr=first_sr)
-        fig, ax = plt.subplots(figsize=(10, 3))
-        img = librosa.display.specshow(tempogram, sr=first_sr, x_axis='time', y_axis='tempo', ax=ax)
-        fig.colorbar(img, ax=ax)
-        st.pyplot(fig)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("Waveform")
+                fig, ax = plt.subplots(figsize=(10, 3))
+                librosa.display.waveshow(first_y, sr=first_sr, ax=ax)
+                st.pyplot(fig)
+                
+            with col2:
+                st.write("Mel-Spectrogram")
+                S = librosa.feature.melspectrogram(y=first_y, sr=first_sr, n_mels=128)
+                S_dB = librosa.power_to_db(S, ref=np.max)
+                fig, ax = plt.subplots(figsize=(10, 3))
+                img = librosa.display.specshow(S_dB, x_axis='time', y_axis='mel', sr=first_sr, ax=ax)
+                fig.colorbar(img, ax=ax, format='%+2.0f dB')
+                st.pyplot(fig)
 
-    if active_machine and all_features:
-        aggregated_profile = np.mean(all_features, axis=0)
-        if st.button(f"Save Profile for '{active_machine}'"):
-            save_features(active_machine, aggregated_profile)
-            st.success(f"Successfully aggregated {len(all_features)} files and saved as a single profile to {active_machine}!")
-    elif not active_machine:
-        st.warning("Select an active machine in the sidebar to save this profile.")
-
-st.header("2. Model Training")
-if st.button("Train Recognition Model"):
-    with st.spinner("Training model on collected profiles..."):
-        success, msg = train_model()
-        if success:
-            st.success(msg)
+        if active_machine:
+            if st.button(f"Save Profile for '{active_machine}'"):
+                save_features(active_machine, aggregated_dataset)
+                st.success(f"Successfully saved {len(aggregated_dataset)} feature chunks as a single profile to {active_machine}!")
         else:
-            st.error(msg)
-            
-st.header("3. Machine Recognition (Inference)")
-test_file = st.file_uploader("Upload single Audio/Video to Identify Machine", type=['wav', 'mp3', 'mp4', 'mov', 'avi', 'mpeg'], key="test")
+            st.warning("Select an active machine in the sidebar to save this profile.")
+
+st.header("2. Model Training (Unsupervised)")
+st.write("Train a One-Class SVM on a machine's profile. This model learns ONLY the features of this machine and rejects anything else (like normal room noise).")
+
+col1, col2 = st.columns(2)
+with col1:
+    train_machine = st.selectbox("Select Machine to Train", [""] + existing_machines, key="train_mach")
+with col2:
+    st.write("")
+    st.write("")
+    if st.button("Train Unsupervised Model"):
+        if train_machine:
+            with st.spinner(f"Training One-Class SVM for {train_machine}..."):
+                success, msg = train_machine_model(train_machine)
+                if success:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+        else:
+            st.error("Please select a machine to train.")
+
+st.header("3. Run Inference on Live Audio")
+st.write("Upload an audio clip (e.g. background noise, random talking, or machine noise). The system will check if any of the trained machines are detected.")
+test_file = st.file_uploader("Upload Audio/Video", type=['wav', 'mp3', 'mp4', 'mov', 'avi', 'mpeg'], key="test")
 
 if test_file is not None:
     file_ext = test_file.name.split('.')[-1].lower()
@@ -158,14 +163,23 @@ if test_file is not None:
         tfile.close()
         
         try:
-            features, _, _, _ = process_file(tfile.name, file_ext)
-            prediction, probs = predict_machine(features)
-            
-            if prediction is None:
-                st.error(probs) 
+            if file_ext in ['mp4', 'mov', 'avi', 'mpeg']:
+                temp_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+                audio_path = extract_audio_from_video(tfile.name, temp_audio_path)
             else:
-                st.success(f"**Predicted Machine: {prediction}**")
-                st.write("Confidence:")
-                st.json(probs)
+                audio_path = tfile.name
+                
+            y, sr = load_audio(audio_path)
+            
+            prediction, match_scores = predict_machine(y, sr)
+            
+            if prediction == "Unknown / Background Noise":
+                st.warning(f"**Result: {prediction}**")
+                st.write("The audio does not match any of our trained machine profiles. It's just background noise.")
+            else:
+                st.success(f"**Result: Detected Machine '{prediction}'!**")
+                
+            st.write("Match Ratios (Inlier Percentage):")
+            st.json(match_scores)
         except Exception as e:
             st.error(f"Error analyzing file: {e}")
