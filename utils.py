@@ -81,11 +81,25 @@ def train_machine_model(machine_name):
     if len(X) == 0:
         return False, "Profile is empty."
         
+    # Filter out transient states (startup/shutdown/trailing bits) 
+    # by assuming the "main" machine noise is the most dense cluster.
+    # We remove the 20% of chunks that are furthest from the center.
+    if len(X) > 10:
+        temp_scaler = StandardScaler()
+        X_temp_scaled = temp_scaler.fit_transform(X)
+        centroid = np.mean(X_temp_scaled, axis=0)
+        distances = np.linalg.norm(X_temp_scaled - centroid, axis=1)
+        
+        # Keep the 80% closest to the centroid (the steady-state noise)
+        threshold = np.percentile(distances, 80)
+        X = X[distances <= threshold]
+
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
     # Unsupervised learning: One-Class SVM learns the boundaries of this specific machine's noise
-    clf = OneClassSVM(nu=0.1, kernel="rbf", gamma='scale')
+    # nu=0.05 because we already aggressively filtered outliers
+    clf = OneClassSVM(nu=0.05, kernel="rbf", gamma='scale')
     clf.fit(X_scaled)
     
     joblib.dump(scaler, os.path.join(machine_dir, "scaler.pkl"))
