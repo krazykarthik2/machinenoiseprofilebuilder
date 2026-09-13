@@ -302,20 +302,20 @@ if audio_source is not None:
         except Exception as e:
             st.error(f"Error analyzing file: {e}")
 
-st.header("4. Global 3D Cluster Visualizer")
-st.write("Visualize all collected 0.1-second chunks across all saved machines in 3D. We use PCA (Principal Component Analysis) to project the features down to 3 dimensions linearly. This preserves the natural geometric structure without warping space, so you can see exactly how the machines form distinct natural clusters.")
+st.header("4. Global 3D Cluster Visualizer (UMAP)")
+st.write("Visualize all collected 0.1-second chunks in 3D using UMAP. UMAP preserves the complex, oscillating topological shapes that 0.1s chunks create. We run Density-Based Clustering (DBSCAN) directly on this topological map to find true natural clusters.")
 
-use_natural_clusters = st.toggle("Enable Natural Clustering (DBSCAN)", value=False)
+use_natural_clusters = st.toggle("Enable Natural Density Clustering (DBSCAN)", value=False)
 if use_natural_clusters:
-    st.info("Finds clusters based purely on data density in the high-dimensional space before projecting to 3D. This lets you see if mathematical clusters naturally align with your different machines.")
+    st.info("Finds clusters based purely on data density on the UMAP manifold. It naturally groups connected topological shapes (like oscillations) into single clusters.")
     col1, col2 = st.columns(2)
-    eps_val = col1.slider("Density Neighborhood Size (Epsilon)", min_value=0.5, max_value=10.0, value=2.0, step=0.1)
+    eps_val = col1.slider("Density Neighborhood Size (Epsilon)", min_value=0.1, max_value=5.0, value=0.5, step=0.1)
     min_samp_val = col2.slider("Min Samples to Form Cluster", min_value=2, max_value=100, value=15, step=1)
 
 if st.button("Generate 3D Cluster Map"):
     import plotly.express as px
     import pandas as pd
-    from sklearn.decomposition import PCA
+    import umap
     from sklearn.preprocessing import StandardScaler
     from sklearn.cluster import DBSCAN
     
@@ -335,33 +335,34 @@ if st.button("Generate 3D Cluster Map"):
     if len(all_chunks) < 3:
         st.error("Not enough data to create a 3D plot. Please build profiles for your machines first.")
     else:
-        with st.spinner("Projecting chunks to 3D space..."):
+        with st.spinner("Projecting chunks to 3D topological space using UMAP..."):
             # Standardize
             X_scaled = StandardScaler().fit_transform(all_chunks)
             
+            # UMAP Projection (Preserves local topology and handles oscillations as manifolds)
+            reducer = umap.UMAP(n_components=3, n_neighbors=15, min_dist=0.1, random_state=42)
+            X_emb = reducer.fit_transform(X_scaled)
+            
             if use_natural_clusters:
+                # Run DBSCAN on the UMAP embeddings where density dictates clusters
                 dbscan = DBSCAN(eps=eps_val, min_samples=min_samp_val)
-                c_labels = dbscan.fit_predict(X_scaled)
+                c_labels = dbscan.fit_predict(X_emb)
                 display_labels = [f"Cluster {c}" if c != -1 else "Noise/Outliers" for c in c_labels]
-                title = "3D Map Colored by Natural Clusters"
+                title = "3D UMAP Colored by Natural Density Clusters"
             else:
                 display_labels = chunk_labels
-                title = "3D Map Colored by Machine Labels"
-            
-            # Linear projection to 3 components (no non-linear warping)
-            pca = PCA(n_components=3)
-            X_pca = pca.fit_transform(X_scaled)
+                title = "3D UMAP Colored by Machine Labels"
             
             df = pd.DataFrame({
-                'PC1': X_pca[:, 0],
-                'PC2': X_pca[:, 1],
-                'PC3': X_pca[:, 2],
+                'UMAP1': X_emb[:, 0],
+                'UMAP2': X_emb[:, 1],
+                'UMAP3': X_emb[:, 2],
                 'Color Label': display_labels,
                 'Actual Machine': chunk_labels
             })
             
             # Create interactive 3D scatter plot
-            fig = px.scatter_3d(df, x='PC1', y='PC2', z='PC3',
+            fig = px.scatter_3d(df, x='UMAP1', y='UMAP2', z='UMAP3',
                                 color='Color Label',
                                 hover_data=['Actual Machine'],
                                 title=title,
@@ -370,9 +371,9 @@ if st.button("Generate 3D Cluster Map"):
             # Make markers a bit smaller and cleanly styled
             fig.update_traces(marker=dict(size=4, line=dict(width=0)))
             fig.update_layout(margin=dict(l=0, r=0, b=0, t=40), scene=dict(
-                xaxis_title='Principal Component 1',
-                yaxis_title='Principal Component 2',
-                zaxis_title='Principal Component 3'
+                xaxis_title='UMAP 1',
+                yaxis_title='UMAP 2',
+                zaxis_title='UMAP 3'
             ))
             
             st.plotly_chart(fig, use_container_width=True)
