@@ -32,3 +32,12 @@ By extracting high-resolution spectral features at 0.1-second intervals, this to
 2.  **Mapping:** 34 distinct spectral features are extracted for each chunk to capture both tone and dynamic range.
 3.  **Filtering:** The system calculates the mathematical centroid of the data and explicitly drops the top 20% most distant chunks to filter out startup/shutdown transient noises.
 4.  **Enclosing:** A One-Class SVM with an RBF kernel draws a tight boundary around the dense core of the remaining machine chunks. Anything that falls outside this strict boundary during inference is instantly flagged as an anomaly.
+
+## 📦 How Bulk Import Works (Step-by-Step)
+
+1. **Upload Zips:** You drag and drop one or multiple `.zip` files (e.g., `Generator.zip`, `HVAC.zip`) into the Bulk Import sidebar.
+2. **Auto-Naming:** The app reads the filename (e.g., `Generator`) and automatically registers a new machine profile under that exact name.
+3. **Extraction & Scanning:** It extracts the zip into a temporary directory and recursively scans all internal folders looking for valid media files (`.wav`, `.mp3`, `.mp4`, `.mpeg`, etc.).
+4. **Processing:** Every valid audio/video file it finds is silently run through the feature extraction pipeline (chopped into 0.1s chunks and mapped to 34 features).
+5. **Aggregation:** The features from *all* the files inside the zip are aggregated and stacked into a single massive dataset (`profile.npy`).
+6. **Auto-Training:** The app instantly trains the One-Class SVM on this aggregated dataset. By the time the loading spinner finishes, your machine is fully trained and immediately ready for live inference and 3D visualization!
