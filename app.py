@@ -260,7 +260,7 @@ if audio_source is not None:
             st.error(f"Error analyzing file: {e}")
 
 st.header("4. Global 3D Cluster Visualizer")
-st.write("Visualize all collected 1-second chunks across all saved machines in 3D. We use PCA (Principal Component Analysis) to project the features down to 3 dimensions linearly. This preserves the natural geometric structure without warping space, so you can see exactly how the machines form distinct natural clusters.")
+st.write("Visualize all collected 0.1-second chunks across all saved machines in 3D. We use PCA (Principal Component Analysis) to project the features down to 3 dimensions linearly. This preserves the natural geometric structure without warping space, so you can see exactly how the machines form distinct natural clusters.")
 
 if st.button("Generate 3D Cluster Map"):
     import plotly.express as px

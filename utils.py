@@ -52,14 +52,9 @@ def extract_features_single(y, sr):
         features.append(np.mean(e))
         features.append(np.std(e))
         
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-    tempogram = librosa.feature.tempogram(onset_envelope=onset_env, sr=sr)
-    features.append(np.mean(tempogram))
-    features.append(np.std(tempogram))
-    
     return np.array(features)
 
-def extract_features_chunked(y, sr, chunk_duration=1.0):
+def extract_features_chunked(y, sr, chunk_duration=0.1):
     chunk_samples = int(chunk_duration * sr)
     features_list = []
     for i in range(0, len(y), chunk_samples):
