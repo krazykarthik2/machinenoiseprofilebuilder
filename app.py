@@ -305,11 +305,19 @@ if audio_source is not None:
 st.header("4. Global 3D Cluster Visualizer")
 st.write("Visualize all collected 0.1-second chunks across all saved machines in 3D. We use PCA (Principal Component Analysis) to project the features down to 3 dimensions linearly. This preserves the natural geometric structure without warping space, so you can see exactly how the machines form distinct natural clusters.")
 
+use_natural_clusters = st.toggle("Enable Natural Clustering (DBSCAN)", value=False)
+if use_natural_clusters:
+    st.info("Finds clusters based purely on data density in the high-dimensional space before projecting to 3D. This lets you see if mathematical clusters naturally align with your different machines.")
+    col1, col2 = st.columns(2)
+    eps_val = col1.slider("Density Neighborhood Size (Epsilon)", min_value=0.5, max_value=10.0, value=2.0, step=0.1)
+    min_samp_val = col2.slider("Min Samples to Form Cluster", min_value=2, max_value=100, value=15, step=1)
+
 if st.button("Generate 3D Cluster Map"):
     import plotly.express as px
     import pandas as pd
     from sklearn.decomposition import PCA
     from sklearn.preprocessing import StandardScaler
+    from sklearn.cluster import DBSCAN
     
     all_chunks = []
     chunk_labels = []
@@ -331,6 +339,15 @@ if st.button("Generate 3D Cluster Map"):
             # Standardize
             X_scaled = StandardScaler().fit_transform(all_chunks)
             
+            if use_natural_clusters:
+                dbscan = DBSCAN(eps=eps_val, min_samples=min_samp_val)
+                c_labels = dbscan.fit_predict(X_scaled)
+                display_labels = [f"Cluster {c}" if c != -1 else "Noise/Outliers" for c in c_labels]
+                title = "3D Map Colored by Natural Clusters"
+            else:
+                display_labels = chunk_labels
+                title = "3D Map Colored by Machine Labels"
+            
             # Linear projection to 3 components (no non-linear warping)
             pca = PCA(n_components=3)
             X_pca = pca.fit_transform(X_scaled)
@@ -339,13 +356,15 @@ if st.button("Generate 3D Cluster Map"):
                 'PC1': X_pca[:, 0],
                 'PC2': X_pca[:, 1],
                 'PC3': X_pca[:, 2],
-                'Machine': chunk_labels
+                'Color Label': display_labels,
+                'Actual Machine': chunk_labels
             })
             
             # Create interactive 3D scatter plot
             fig = px.scatter_3d(df, x='PC1', y='PC2', z='PC3',
-                                color='Machine',
-                                title="3D Machine Noise Clusters",
+                                color='Color Label',
+                                hover_data=['Actual Machine'],
+                                title=title,
                                 opacity=0.7)
             
             # Make markers a bit smaller and cleanly styled
