@@ -3,7 +3,7 @@ import json
 import numpy as np
 import librosa
 import joblib
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 
@@ -60,11 +60,11 @@ def extract_features(y, sr):
     return np.array(features)
 
 def save_features(machine_name, features):
+    import uuid
     machine_dir = os.path.join(DATA_DIR, machine_name)
     os.makedirs(machine_dir, exist_ok=True)
     
-    existing_files = [f for f in os.listdir(machine_dir) if f.endswith('.npy')]
-    feature_path = os.path.join(machine_dir, f"features_{len(existing_files)}.npy")
+    feature_path = os.path.join(machine_dir, f"features_{uuid.uuid4().hex}.npy")
     np.save(feature_path, features)
     return feature_path
 
