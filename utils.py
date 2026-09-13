@@ -60,11 +60,15 @@ def extract_features(y, sr):
     return np.array(features)
 
 def save_features(machine_name, features):
-    import uuid
     machine_dir = os.path.join(DATA_DIR, machine_name)
     os.makedirs(machine_dir, exist_ok=True)
     
-    feature_path = os.path.join(machine_dir, f"features_{uuid.uuid4().hex}.npy")
+    # Remove any existing .npy files to ensure there's only one profile
+    for f in os.listdir(machine_dir):
+        if f.endswith('.npy'):
+            os.remove(os.path.join(machine_dir, f))
+            
+    feature_path = os.path.join(machine_dir, "profile.npy")
     np.save(feature_path, features)
     return feature_path
 

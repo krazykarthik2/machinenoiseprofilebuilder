@@ -130,12 +130,12 @@ if uploaded_files:
         st.pyplot(fig)
 
     if active_machine and all_features:
-        if st.button(f"Save {len(all_features)} Profiles for '{active_machine}'"):
-            for feats in all_features:
-                save_features(active_machine, feats)
-            st.success(f"Successfully saved {len(all_features)} profiles to {active_machine}!")
+        aggregated_profile = np.mean(all_features, axis=0)
+        if st.button(f"Save Profile for '{active_machine}'"):
+            save_features(active_machine, aggregated_profile)
+            st.success(f"Successfully aggregated {len(all_features)} files and saved as a single profile to {active_machine}!")
     elif not active_machine:
-        st.warning("Select an active machine in the sidebar to save these profiles.")
+        st.warning("Select an active machine in the sidebar to save this profile.")
 
 st.header("2. Model Training")
 if st.button("Train Recognition Model"):
