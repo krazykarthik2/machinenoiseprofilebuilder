@@ -48,11 +48,14 @@ uploaded_files = st.file_uploader(
 )
 
 def process_file(file_path, file_ext):
+    audio_path = file_path
     if file_ext in ['mp4', 'mov', 'avi', 'mpeg']:
-        temp_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
-        audio_path = extract_audio_from_video(file_path, temp_audio_path)
-    else:
-        audio_path = file_path
+        try:
+            temp_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+            audio_path = extract_audio_from_video(file_path, temp_audio_path)
+        except Exception as e:
+            # If moviepy fails (e.g. unsupported codec or audio-only), fallback to directly loading with librosa
+            audio_path = file_path
         
     y, sr = load_audio(audio_path)
     features_2d = extract_features_chunked(y, sr)

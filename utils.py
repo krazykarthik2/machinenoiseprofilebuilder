@@ -2,7 +2,7 @@ import os
 import numpy as np
 import librosa
 import joblib
-from moviepy import VideoFileClip
+from moviepy import VideoFileClip, AudioFileClip
 from sklearn.svm import OneClassSVM
 from sklearn.preprocessing import StandardScaler
 
@@ -10,8 +10,18 @@ DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 def extract_audio_from_video(video_path, output_audio_path):
-    clip = VideoFileClip(video_path)
-    clip.audio.write_audiofile(output_audio_path, logger=None)
+    try:
+        clip = VideoFileClip(video_path)
+        clip.audio.write_audiofile(output_audio_path, logger=None)
+        clip.close()
+    except Exception as e:
+        # If it fails (e.g., audio-only file with video extension), try AudioFileClip directly
+        try:
+            clip = AudioFileClip(video_path)
+            clip.write_audiofile(output_audio_path, logger=None)
+            clip.close()
+        except Exception as e2:
+            raise Exception(f"VideoFileClip error: {e}. AudioFileClip error: {e2}")
     return output_audio_path
 
 def load_audio(file_path):
