@@ -177,15 +177,30 @@ if audio_source is not None:
                 
             y, sr = load_audio(audio_path)
             
-            prediction, match_scores = predict_machine(y, sr)
+            prediction, match_scores, chunk_preds = predict_machine(y, sr)
             
             if prediction == "Unknown / Background Noise":
                 st.warning(f"**Result: {prediction}**")
-                st.write("The audio does not match any of our trained machine profiles. It's just background noise.")
+                st.write("The audio does not match any of our trained machine profiles.")
             else:
                 st.success(f"**Result: Detected Machine '{prediction}'!**")
                 
             st.write("Match Ratios (Inlier Percentage):")
             st.json(match_scores)
+            
+            st.subheader("Chunk-by-Chunk Analysis")
+            st.write("Green chunks match the machine profile. Red chunks are outliers (transient noise or background).")
+            fig, ax = plt.subplots(figsize=(12, 3))
+            librosa.display.waveshow(y, sr=sr, ax=ax, alpha=0.5)
+            
+            # Highlight chunks
+            # each chunk is 1.0 seconds long (based on extract_features_chunked default)
+            for i, p in enumerate(chunk_preds):
+                color = 'green' if p == 1 else 'red'
+                ax.axvspan(i, i + 1, color=color, alpha=0.3)
+                
+            st.pyplot(fig)
+            st.audio(audio_path)
+            
         except Exception as e:
             st.error(f"Error analyzing file: {e}")

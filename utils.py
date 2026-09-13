@@ -113,6 +113,7 @@ def predict_machine(y, sr):
     
     best_machine = None
     highest_inlier_ratio = 0.0
+    best_preds = np.full(len(X_test), -1)
     
     results = {}
     
@@ -136,8 +137,9 @@ def predict_machine(y, sr):
             if ratio > highest_inlier_ratio and ratio > 0.5: # At least 50% of chunks must match the machine profile
                 highest_inlier_ratio = ratio
                 best_machine = machine
+                best_preds = preds
                 
     if best_machine is None:
-        return "Unknown / Background Noise", results
+        return "Unknown / Background Noise", results, best_preds
         
-    return best_machine, results
+    return best_machine, results, best_preds
