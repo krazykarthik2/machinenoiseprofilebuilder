@@ -188,37 +188,70 @@ if audio_source is not None:
             st.write("Match Ratios (Inlier Percentage):")
             st.json(match_scores)
             
-            st.subheader("Chunk-by-Chunk Analysis (Confidence Gradient)")
-            st.write("Flowing gradient based on model confidence. Deep green = strong match, Deep red = strong outlier.")
-            fig, ax = plt.subplots(figsize=(12, 3))
+            st.subheader("Interactive Chunk-by-Chunk Analysis")
+            st.write("Click anywhere on the waveform to play the audio at that exact moment! The flowing background gradient shows the model's confidence (Deep Green = Machine, Deep Red = Outlier).")
             
             if len(chunk_preds) > 0:
                 import matplotlib.colors as mcolors
                 import matplotlib.cm as cm
+                import base64
+                import streamlit.components.v1 as components
                 
                 # Setup colormap normalization based on the decision function scores
-                # 0 is the boundary (yellow), >0 is inlier (green), <0 is outlier (red)
                 vmin = min(-1.0, np.min(chunk_preds))
                 vmax = max(1.0, np.max(chunk_preds))
                 norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+                cmap = cm.get_cmap('RdYlGn')
                 
-                # Stretch the scores to fit behind the waveform using a bicubic gradient
-                gradient = np.array(chunk_preds).reshape(1, -1)
+                # Build CSS linear gradient string
+                stops = []
+                n = len(chunk_preds)
+                for i, score in enumerate(chunk_preds):
+                    rgba = cmap(norm(score))
+                    # Convert to rgba string for CSS with some transparency
+                    rgba_str = f"rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, 0.6)"
+                    pct = (i / max(1, n-1)) * 100
+                    stops.append(f"{rgba_str} {pct:.1f}%")
                 
-                # librosa waveshow limits
-                times = librosa.times_like(y, sr=sr)
-                max_time = times[-1] if len(times) > 0 else len(chunk_preds)
+                css_gradient = f"linear-gradient(to right, {', '.join(stops)})"
                 
-                # Plot the flowing gradient background
-                ax.imshow(gradient, aspect='auto', cmap='RdYlGn', norm=norm,
-                          extent=[0, max_time, -1, 1],
-                          alpha=0.4, interpolation='bicubic')
-            
-            librosa.display.waveshow(y, sr=sr, ax=ax, alpha=0.8, color='black')
-            ax.set_ylim([-1, 1])
+                # Encode audio to base64
+                with open(audio_path, 'rb') as f:
+                    audio_b64 = base64.b64encode(f.read()).decode('utf-8')
+                    
+                # Create Wavesurfer HTML
+                html_code = f"""
+                <div style="background: {css_gradient}; border-radius: 8px; padding: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.1);">
+                    <div id="waveform"></div>
+                </div>
+                <div style="margin-top: 15px; text-align: center;">
+                    <button id="playBtn" style="padding: 10px 24px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 8px; border: none; background: #2e3b4e; color: white; transition: 0.2s;">▶ Play / Pause</button>
+                </div>
+                <script type="module">
+                    import WaveSurfer from 'https://cdn.jsdelivr.net/npm/wavesurfer.js@7/dist/wavesurfer.esm.js'
+                    
+                    const ws = WaveSurfer.create({{
+                        container: '#waveform',
+                        waveColor: 'rgba(0, 0, 0, 0.4)',
+                        progressColor: 'rgba(0, 0, 0, 0.8)',
+                        url: 'data:audio/wav;base64,{audio_b64}',
+                        height: 120,
+                        normalize: true,
+                        cursorColor: '#ff0000',
+                        cursorWidth: 2
+                    }})
+                    
+                    const btn = document.getElementById('playBtn')
+                    btn.onclick = () => ws.playPause()
+                    
+                    ws.on('play', () => btn.textContent = '⏸ Pause')
+                    ws.on('pause', () => btn.textContent = '▶ Play / Pause')
+                </script>
+                """
                 
-            st.pyplot(fig)
-            st.audio(audio_path)
+                components.html(html_code, height=250)
+            else:
+                st.audio(audio_path)
             
         except Exception as e:
             st.error(f"Error analyzing file: {e}")
