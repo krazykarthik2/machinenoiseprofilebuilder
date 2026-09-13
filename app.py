@@ -258,3 +258,59 @@ if audio_source is not None:
             
         except Exception as e:
             st.error(f"Error analyzing file: {e}")
+
+st.header("4. Global 3D Cluster Visualizer")
+st.write("Visualize all collected 1-second chunks across all saved machines in 3D. We use PCA (Principal Component Analysis) to project the features down to 3 dimensions linearly. This preserves the natural geometric structure without warping space, so you can see exactly how the machines form distinct natural clusters.")
+
+if st.button("Generate 3D Cluster Map"):
+    import plotly.express as px
+    import pandas as pd
+    from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
+    
+    all_chunks = []
+    chunk_labels = []
+    
+    machines = [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))]
+    
+    for machine in machines:
+        profile_path = os.path.join(DATA_DIR, machine, "profile.npy")
+        if os.path.exists(profile_path):
+            X_mach = np.load(profile_path)
+            if len(X_mach) > 0:
+                all_chunks.extend(X_mach)
+                chunk_labels.extend([machine] * len(X_mach))
+                
+    if len(all_chunks) < 3:
+        st.error("Not enough data to create a 3D plot. Please build profiles for your machines first.")
+    else:
+        with st.spinner("Projecting chunks to 3D space..."):
+            # Standardize
+            X_scaled = StandardScaler().fit_transform(all_chunks)
+            
+            # Linear projection to 3 components (no non-linear warping)
+            pca = PCA(n_components=3)
+            X_pca = pca.fit_transform(X_scaled)
+            
+            df = pd.DataFrame({
+                'PC1': X_pca[:, 0],
+                'PC2': X_pca[:, 1],
+                'PC3': X_pca[:, 2],
+                'Machine': chunk_labels
+            })
+            
+            # Create interactive 3D scatter plot
+            fig = px.scatter_3d(df, x='PC1', y='PC2', z='PC3',
+                                color='Machine',
+                                title="3D Machine Noise Clusters",
+                                opacity=0.7)
+            
+            # Make markers a bit smaller and cleanly styled
+            fig.update_traces(marker=dict(size=4, line=dict(width=0)))
+            fig.update_layout(margin=dict(l=0, r=0, b=0, t=40), scene=dict(
+                xaxis_title='Principal Component 1',
+                yaxis_title='Principal Component 2',
+                zaxis_title='Principal Component 3'
+            ))
+            
+            st.plotly_chart(fig, use_container_width=True)
