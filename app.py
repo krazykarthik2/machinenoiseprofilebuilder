@@ -24,6 +24,7 @@ st.write("Build an unsupervised profile for a specific machine to distinguish it
 
 # Sidebar for Machine Management
 st.sidebar.header("Machine Profiles")
+os.makedirs(DATA_DIR, exist_ok=True)
 existing_machines = [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))]
 
 new_machine = st.sidebar.text_input("Create new machine profile:")
