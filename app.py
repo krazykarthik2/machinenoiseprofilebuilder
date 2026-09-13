@@ -22,6 +22,20 @@ st.set_page_config(page_title="Audio Noise Profile Builder (Unsupervised)", layo
 st.title("Audio Noise Profile Builder")
 st.write("Build an unsupervised profile for a specific machine to distinguish it from normal day-to-day noise.")
 
+def process_file(file_path, file_ext):
+    audio_path = file_path
+    if file_ext in ['mp4', 'mov', 'avi', 'mpeg']:
+        try:
+            temp_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+            audio_path = extract_audio_from_video(file_path, temp_audio_path)
+        except Exception as e:
+            # If moviepy fails (e.g. unsupported codec or audio-only), fallback to directly loading with librosa
+            audio_path = file_path
+        
+    y, sr = load_audio(audio_path)
+    features_2d = extract_features_chunked(y, sr)
+    return features_2d, y, sr, audio_path
+
 # Sidebar for Machine Management
 st.sidebar.header("Machine Profiles")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -36,9 +50,51 @@ if st.sidebar.button("Add Machine"):
 
 if not existing_machines and not new_machine:
     st.warning("Please create a machine profile in the sidebar first.")
-    st.stop()
+    # Do not stop completely if they want to use Bulk Import, but main UI needs active machine
     
-active_machine = st.sidebar.selectbox("Select Active Machine for Data Collection", [""] + existing_machines)
+st.sidebar.markdown("---")
+st.sidebar.header("Bulk Import")
+st.sidebar.write("Upload `.zip` files (e.g. `Fan.zip`). The app will create the machine and process all audio inside it.")
+bulk_zips = st.sidebar.file_uploader("Upload Machine Zips", type=['zip'], accept_multiple_files=True, key="bulk")
+
+if st.sidebar.button("Process Bulk Import"):
+    if bulk_zips:
+        for b_zip in bulk_zips:
+            mach_name = b_zip.name.replace(".zip", "")
+            with st.spinner(f"Processing {mach_name}..."):
+                # Save temp zip
+                tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+                tfile.write(b_zip.read())
+                tfile.close()
+                
+                # Extract
+                extract_dir = tempfile.mkdtemp()
+                with zipfile.ZipFile(tfile.name, 'r') as zip_ref:
+                    zip_ref.extractall(extract_dir)
+                    
+                all_feats = []
+                for root, dirs, files in os.walk(extract_dir):
+                    for file in files:
+                        ext = file.split('.')[-1].lower()
+                        if ext in ['wav', 'mp3', 'mp4', 'mov', 'avi', 'mpeg']:
+                            try:
+                                feats, _, _, _ = process_file(os.path.join(root, file), ext)
+                                all_feats.append(feats)
+                            except Exception:
+                                pass
+                
+                if all_feats:
+                    aggr_dataset = np.vstack(all_feats)
+                    save_features(mach_name, aggr_dataset)
+                    train_machine_model(mach_name)
+                    st.sidebar.success(f"Imported and trained '{mach_name}'!")
+                else:
+                    st.sidebar.error(f"No valid audio found in {b_zip.name}")
+        st.rerun()
+    else:
+        st.sidebar.error("Upload at least one zip file.")
+        
+active_machine = st.sidebar.selectbox("Select Active Machine for Data Collection", [""] + [d for d in os.listdir(DATA_DIR) if os.path.isdir(os.path.join(DATA_DIR, d))])
 
 st.header("1. Upload Data to Build Profile")
 st.write(f"Upload audio/video files for the machine **{active_machine if active_machine else '[Select a machine]'}**.")
@@ -47,20 +103,6 @@ uploaded_files = st.file_uploader(
     type=['wav', 'mp3', 'mp4', 'mov', 'avi', 'mpeg', 'zip'],
     accept_multiple_files=True
 )
-
-def process_file(file_path, file_ext):
-    audio_path = file_path
-    if file_ext in ['mp4', 'mov', 'avi', 'mpeg']:
-        try:
-            temp_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
-            audio_path = extract_audio_from_video(file_path, temp_audio_path)
-        except Exception as e:
-            # If moviepy fails (e.g. unsupported codec or audio-only), fallback to directly loading with librosa
-            audio_path = file_path
-        
-    y, sr = load_audio(audio_path)
-    features_2d = extract_features_chunked(y, sr)
-    return features_2d, y, sr, audio_path
 
 if uploaded_files:
     all_features_chunks = []
