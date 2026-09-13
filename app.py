@@ -151,15 +151,27 @@ with col2:
             st.error("Please select a machine to train.")
 
 st.header("3. Run Inference on Live Audio")
-st.write("Upload an audio clip (e.g. background noise, random talking, or machine noise). The system will check if any of the trained machines are detected.")
-test_file = st.file_uploader("Upload Audio/Video", type=['wav', 'mp3', 'mp4', 'mov', 'avi', 'mpeg'], key="test")
+st.write("Upload an audio clip or record from your microphone. The system will check if any of the trained machines are detected.")
 
-if test_file is not None:
-    file_ext = test_file.name.split('.')[-1].lower()
+col1, col2 = st.columns(2)
+with col1:
+    test_file = st.file_uploader("Upload Audio/Video", type=['wav', 'mp3', 'mp4', 'mov', 'avi', 'mpeg'], key="test")
+with col2:
+    # Use native Streamlit audio input if available
+    mic_audio = None
+    if hasattr(st, 'audio_input'):
+        mic_audio = st.audio_input("Record from Microphone")
+    else:
+        st.info("Update Streamlit to v1.38+ for native microphone support.")
+
+audio_source = mic_audio if mic_audio else test_file
+
+if audio_source is not None:
+    file_ext = audio_source.name.split('.')[-1].lower() if hasattr(audio_source, 'name') else 'wav'
     
     with st.spinner("Analyzing and predicting..."):
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") 
-        tfile.write(test_file.read())
+        tfile.write(audio_source.read())
         tfile.close()
         
         try:
