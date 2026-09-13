@@ -133,22 +133,16 @@ if uploaded_files:
 st.header("2. Model Training (Unsupervised)")
 st.write("Train a One-Class SVM on a machine's profile. This model learns ONLY the features of this machine and rejects anything else (like normal room noise).")
 
-col1, col2 = st.columns(2)
-with col1:
-    train_machine = st.selectbox("Select Machine to Train", [""] + existing_machines, key="train_mach")
-with col2:
-    st.write("")
-    st.write("")
-    if st.button("Train Unsupervised Model"):
-        if train_machine:
-            with st.spinner(f"Training One-Class SVM for {train_machine}..."):
-                success, msg = train_machine_model(train_machine)
-                if success:
-                    st.success(msg)
-                else:
-                    st.error(msg)
-        else:
-            st.error("Please select a machine to train.")
+if st.button("Train Unsupervised Model"):
+    if active_machine:
+        with st.spinner(f"Training One-Class SVM for {active_machine}..."):
+            success, msg = train_machine_model(active_machine)
+            if success:
+                st.success(msg)
+            else:
+                st.error(msg)
+    else:
+        st.error("Please select an Active Machine in the sidebar first.")
 
 st.header("3. Run Inference on Live Audio")
 st.write("Upload an audio clip or record from your microphone. The system will check if any of the trained machines are detected.")
